@@ -40,10 +40,13 @@ module ActiveMerchant
     #
     class RealexGateway < Gateway
       URL = 'https://epage.payandshop.com/epage-remote.cgi'
-                  
+      THREE_D_SECURE_URL = 'https://epage.payandshop.com/epage-3dsecure.cgi'
+      
       CARD_MAPPING = {
         'master'            => 'MC',
         'visa'              => 'VISA',
+        'visa_delta'        => 'VISA',
+        'visa_electron'     => 'VISA',
         'american_express'  => 'AMEX',
         'diners_club'       => 'DINERS',
         'switch'            => 'SWITCH',
@@ -84,11 +87,13 @@ module ActiveMerchant
       #
       def authorize(money, creditcard, options = {})
         requires!(options, :order_id)
-        
-        # if options[:3d_secure]
-        # three_d_secure_request = build_3d_secure_verify_enrolled_request(money, creditcard, options)
-        # three_d_secure_response = commit_3dsecure(request)
 
+        if options[:three_d_secure]
+          three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifyenrolled", money, creditcard, options)
+          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          return three_d_secure_response if three_d_secure_response.enrolled?
+        end
+        
         request = build_purchase_or_authorization_request(:authorization, money, creditcard, options) 
         commit(request)
       end
@@ -108,13 +113,64 @@ module ActiveMerchant
       def purchase(money, creditcard, options = {})
         requires!(options, :order_id)
 
-        # if options[:3d_secure]
-        # three_d_secure_request = build_3d_secure_verify_enrolled_request(money, creditcard, options)
-        # three_d_secure_response = commit_3dsecure(three_d_secure_request)
-                
+        if options[:three_d_secure_auth]
+          three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifysig", money, creditcard, options)
+          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          result = three_d_secure_response.params['result']
+          if result  == '00'
+            status = three_d_secure_response.params['threedsecure_status'] 
+            # success
+            if status == 'Y'
+              # 3d Secure complete.
+              # not-liable. continue
+              options[:three_d_secure_sig] = {}
+              options[:three_d_secure_sig][:eci]  = three_d_secure_response.params['threedsecure_eci']
+              options[:three_d_secure_sig][:xid]  = three_d_secure_response.params['threedsecure_xid']
+              options[:three_d_secure_sig][:cavv] = three_d_secure_response.params['threedsecure_cavv']
+              # TODO add option[:accept_liability_authentication_failed]
+              # TODO add option[:accept_liability_acs_failure]
+
+            elsif status == 'N'
+              # password entered incorrectly
+              # liable. abort?
+              return Response.new(false, "3DSecure password entered incorrectly. Aborting transaction.",{},{})
+            elsif status == 'U'
+              # Bank ACS service having dificulty. 
+              # liable. abort?
+              return Response.new(false, "3DSecure Bank ACS service 500 errors. Aborting transaction.",{},{})
+            elsif status == 'A'
+              # ACS service aknowledges.
+              # not-liable. continue
+              options[:three_d_secure_sig] = {}
+              options[:three_d_secure_sig][:eci]  = three_d_secure_response.params['threedsecure_eci']
+              options[:three_d_secure_sig][:xid]  = three_d_secure_response.params['threedsecure_xid']
+              options[:three_d_secure_sig][:cavv] = three_d_secure_response.params['threedsecure_cavv']
+            end  
+          else
+            # fail, message tampered with.
+            return Response.new(false, "3DSecure message tampered. Aborting transaction.",{},{})
+          end
+
+          # If the result is “00” the message has not been tampered with. Continue:
+          # i.	If the status is “Y”, the cardholder entered their passphrase correctly. This is a full 3DSecure transaction, go to step 8b.
+          # ii.	If the status is “N”, the cardholder entered the wrong passphrase. No shift in liability, do not proceed to authorisation.
+          # iii.	If the status is “U”, then the Issuer was having problems with their systems at the time and was unable to check the passphrase. You may continue with the transaction (go to step 8c) but there will be no shift in liability.
+          # iv.	If the status is “A” the issuing bank acknowledges the attempt made by the merchant and accepts the liability shift. Continue to step 8a.
+          # b.	If the result is “110”, the digital signatures do not match the message and most likely the message has been tampered with. No shift in liability, do
+            
+        end
+        
+        if options[:three_d_secure] && !options[:three_d_secure_auth]
+          three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifyenrolled", money, creditcard, options)
+          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          return three_d_secure_response if three_d_secure_response.enrolled?
+        end
+        
         request = build_purchase_or_authorization_request(:purchase, money, creditcard, options)
         commit(request)
       end
+      
+      # 3ds-verifysig
       
       # Captures the funds from an authorized transaction.
       #
@@ -181,9 +237,14 @@ module ActiveMerchant
 
       private
       def commit(request)
+        RAILS_DEFAULT_LOGGER.info "*"*78
+        RAILS_DEFAULT_LOGGER.info "REALEXREALEXREALEX-standard"
+        RAILS_DEFAULT_LOGGER.info request.inspect
         response = ssl_post(URL, request)
         parsed = parse(response)
-
+        RAILS_DEFAULT_LOGGER.info "*"*78
+        RAILS_DEFAULT_LOGGER.info response.inspect
+        
         Response.new(parsed[:result] == "00", message_from(parsed), parsed,
           :test => parsed[:message] =~ /\[ test system \]/,
           :authorization => parsed[:authcode],
@@ -196,9 +257,29 @@ module ActiveMerchant
         )
       end
 
+     #def commit_3dsecure(request)
+     #  response = ssl_post(URL, request)
+     #  parsed = parse(response)
+     #end
+      
       def commit_3dsecure(request)
-        response = ssl_post(URL, request)
+        RAILS_DEFAULT_LOGGER.info "*"*78
+        RAILS_DEFAULT_LOGGER.info "REALEXREALEXREALEX-3dsecure"
+        RAILS_DEFAULT_LOGGER.info request.inspect
+        response = ssl_post(THREE_D_SECURE_URL, request)
         parsed = parse(response)
+        RAILS_DEFAULT_LOGGER.info "*"*78
+        RAILS_DEFAULT_LOGGER.info response.inspect
+        
+        Response.new(parsed[:result] == "00", message_from(parsed), parsed,
+          :test => parsed[:message] =~ /\[ test system \]/,
+          :body => response,
+          :pa_req => parsed[:pareq],
+          :acs_url => parsed[:url],
+          :three_d_secure => true,
+          :xid => parsed[:xid],
+          :three_d_secure_enrolled => parsed[:enrolled] == "Y" ? true : false
+        )
       end
 
       def parse(xml)
@@ -233,6 +314,7 @@ module ActiveMerchant
           add_ammount(xml, money, options)
           add_card(xml, credit_card)
           xml.tag! 'autosettle', 'flag' => auto_settle_flag(action)
+          add_three_d_secure(xml, options) if options[:three_d_secure_sig]
           add_signed_digest(xml, timestamp, @options[:login], options[:order_id], amount(money), (options[:currency] || currency(money)), credit_card.number)
           add_comments(xml, options)
           add_address_and_customer_info(xml, options)
@@ -279,24 +361,41 @@ module ActiveMerchant
         xml.target!
       end
 
-      def build_3d_secure_verify_enrolled_request(money, credit_card, options)
+      def build_3d_secure_verify_signature_or_enrolled_request(action, money, credit_card, options)
         timestamp = self.class.timestamp
         xml = Builder::XmlMarkup.new :indent => 2
-        xml.tag! 'request', 'timestamp' => timestamp, 'type' => '3ds-verifyenrolled' do
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => action do
           add_merchant_details(xml, options)
           xml.tag! 'orderid', sanitize_order_id(options[:order_id])
           add_ammount(xml, money, options)
           add_card(xml, credit_card)
+          xml.tag!('pares', options[:three_d_secure_auth][:pa_res]) if(action == '3ds-verifysig')
           add_signed_digest(xml, timestamp, @options[:login], options[:order_id], amount(money), (options[:currency] || currency(money)), credit_card.number)
           add_comments(xml, options)
         end
-        xml.target!        
+        xml.target!
       end
 
+      # <mpi>
+      #   <cavv>AAACAWQWaRKIFwQlVBZpAAAAAAA=</cavv>
+      #   <xid>l2ncCuvKNtCtRY3OoC/ztHS8ZvI=</xid>
+      #   <eci>5</eci>
+      # </mpi>
+      
+      def add_three_d_secure(xml, options)
+        if options[:three_d_secure_sig]
+          xml.tag! 'mpi' do
+            xml.tag! 'cavv', options[:three_d_secure_sig][:cavv]
+            xml.tag! 'xid', options[:three_d_secure_sig][:xid]
+            xml.tag! 'eci', options[:three_d_secure_sig][:eci]
+          end
+        end
+      end
+      
       def add_address_and_customer_info(xml, options)
         billing_address = options[:billing_address] || options[:address]
         shipping_address = options[:shipping_address]
-
+        
         return unless billing_address || shipping_address || options[:customer] || options[:invoice] || options[:ip]
         
         xml.tag! 'tssinfo' do
@@ -366,7 +465,6 @@ module ActiveMerchant
       end
 
       def extract_digits(string)
-        return "" if string.nil?
         string.gsub(/[\D]/,'')
       end
 

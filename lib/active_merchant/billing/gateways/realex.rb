@@ -465,6 +465,7 @@ module ActiveMerchant
       end
 
       def extract_digits(string)
+        return "" if string.nil?
         string.gsub(/[\D]/,'')
       end
 

@@ -237,14 +237,9 @@ module ActiveMerchant
 
       private
       def commit(request)
-        RAILS_DEFAULT_LOGGER.info "*"*78
-        RAILS_DEFAULT_LOGGER.info "REALEXREALEXREALEX-standard"
-        RAILS_DEFAULT_LOGGER.info request.inspect
         response = ssl_post(URL, request)
         parsed = parse(response)
-        RAILS_DEFAULT_LOGGER.info "*"*78
-        RAILS_DEFAULT_LOGGER.info response.inspect
-        
+
         Response.new(parsed[:result] == "00", message_from(parsed), parsed,
           :test => parsed[:message] =~ /\[ test system \]/,
           :authorization => parsed[:authcode],
@@ -263,14 +258,9 @@ module ActiveMerchant
      #end
       
       def commit_3dsecure(request)
-        RAILS_DEFAULT_LOGGER.info "*"*78
-        RAILS_DEFAULT_LOGGER.info "REALEXREALEXREALEX-3dsecure"
-        RAILS_DEFAULT_LOGGER.info request.inspect
         response = ssl_post(THREE_D_SECURE_URL, request)
         parsed = parse(response)
-        RAILS_DEFAULT_LOGGER.info "*"*78
-        RAILS_DEFAULT_LOGGER.info response.inspect
-        
+
         Response.new(parsed[:result] == "00", message_from(parsed), parsed,
           :test => parsed[:message] =~ /\[ test system \]/,
           :body => response,

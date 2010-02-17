@@ -84,6 +84,10 @@ module ActiveMerchant
       #
       def authorize(money, creditcard, options = {})
         requires!(options, :order_id)
+        
+        # if options[:3d_secure]
+        # three_d_secure_request = build_3d_secure_verify_enrolled_request(money, creditcard, options)
+        # three_d_secure_response = commit_3dsecure(request)
 
         request = build_purchase_or_authorization_request(:authorization, money, creditcard, options) 
         commit(request)
@@ -104,6 +108,10 @@ module ActiveMerchant
       def purchase(money, creditcard, options = {})
         requires!(options, :order_id)
 
+        # if options[:3d_secure]
+        # three_d_secure_request = build_3d_secure_verify_enrolled_request(money, creditcard, options)
+        # three_d_secure_response = commit_3dsecure(three_d_secure_request)
+                
         request = build_purchase_or_authorization_request(:purchase, money, creditcard, options)
         commit(request)
       end
@@ -188,6 +196,11 @@ module ActiveMerchant
         )
       end
 
+      def commit_3dsecure(request)
+        response = ssl_post(URL, request)
+        parsed = parse(response)
+      end
+
       def parse(xml)
         response = {}
                 
@@ -264,6 +277,20 @@ module ActiveMerchant
           add_signed_digest(xml, timestamp, @options[:login], options[:order_id])
         end
         xml.target!
+      end
+
+      def build_3d_secure_verify_enrolled_request(money, credit_card, options)
+        timestamp = self.class.timestamp
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => '3ds-verifyenrolled' do
+          add_merchant_details(xml, options)
+          xml.tag! 'orderid', sanitize_order_id(options[:order_id])
+          add_ammount(xml, money, options)
+          add_card(xml, credit_card)
+          add_signed_digest(xml, timestamp, @options[:login], options[:order_id], amount(money), (options[:currency] || currency(money)), credit_card.number)
+          add_comments(xml, options)
+        end
+        xml.target!        
       end
 
       def add_address_and_customer_info(xml, options)

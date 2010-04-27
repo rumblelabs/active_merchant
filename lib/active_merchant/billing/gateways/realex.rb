@@ -90,7 +90,7 @@ module ActiveMerchant
 
         if options[:three_d_secure]
           three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifyenrolled", money, creditcard, options)
-          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          three_d_secure_response = commit(three_d_secure_request, :three_d_secure)
           return three_d_secure_response if three_d_secure_response.enrolled?
         end
         
@@ -120,8 +120,9 @@ module ActiveMerchant
           if result  == '00'
             status = three_d_secure_response.params['threedsecure_status'] 
             # success
-            if status == 'Y'
-              # 3d Secure complete.
+            if status == 'Y' || status == 'A'
+              # Y: 3d Secure complete.
+              # A: ACS service aknowledges.              
               # not-liable. continue
               options[:three_d_secure_sig] = {}
               options[:three_d_secure_sig][:eci]  = three_d_secure_response.params['threedsecure_eci']
@@ -138,39 +139,24 @@ module ActiveMerchant
               # Bank ACS service having dificulty. 
               # liable. abort?
               return Response.new(false, "3DSecure Bank ACS service 500 errors. Aborting transaction.",{},{})
-            elsif status == 'A'
-              # ACS service aknowledges.
-              # not-liable. continue
-              options[:three_d_secure_sig] = {}
-              options[:three_d_secure_sig][:eci]  = three_d_secure_response.params['threedsecure_eci']
-              options[:three_d_secure_sig][:xid]  = three_d_secure_response.params['threedsecure_xid']
-              options[:three_d_secure_sig][:cavv] = three_d_secure_response.params['threedsecure_cavv']
             end  
-          else
+          elsif result == "110"
             # fail, message tampered with.
             return Response.new(false, "3DSecure message tampered. Aborting transaction.",{},{})
+          else
+            return Response.new(false, "Unknown 3DSecure Error.",{},{})
           end
-
-          # If the result is “00” the message has not been tampered with. Continue:
-          # i.	If the status is “Y”, the cardholder entered their passphrase correctly. This is a full 3DSecure transaction, go to step 8b.
-          # ii.	If the status is “N”, the cardholder entered the wrong passphrase. No shift in liability, do not proceed to authorisation.
-          # iii.	If the status is “U”, then the Issuer was having problems with their systems at the time and was unable to check the passphrase. You may continue with the transaction (go to step 8c) but there will be no shift in liability.
-          # iv.	If the status is “A” the issuing bank acknowledges the attempt made by the merchant and accepts the liability shift. Continue to step 8a.
-          # b.	If the result is “110”, the digital signatures do not match the message and most likely the message has been tampered with. No shift in liability, do
-            
         end
         
         if options[:three_d_secure] && !options[:three_d_secure_auth]
           three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifyenrolled", money, creditcard, options)
-          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          three_d_secure_response = commit(three_d_secure_request, :three_d_secure)
           return three_d_secure_response if three_d_secure_response.enrolled?
         end
         
         request = build_purchase_or_authorization_request(:purchase, money, creditcard, options)
         commit(request)
       end
-      
-      # 3ds-verifysig
       
       # Captures the funds from an authorized transaction.
       #
@@ -236,40 +222,35 @@ module ActiveMerchant
       end
 
       private
-      def commit(request)
-        response = ssl_post(URL, request)
+      def commit(request, endpoint=:default)
+        url = URL
+        url = THREE_D_SECURE_URL if endpoint == :three_d_secure
+
+        response = ssl_post(url, request)
         parsed = parse(response)
 
-        Response.new(parsed[:result] == "00", message_from(parsed), parsed,
+        options = {
           :test => parsed[:message] =~ /\[ test system \]/,
           :authorization => parsed[:authcode],
           :cvv_result => parsed[:cvnresult],
           :body => response,
-          :avs_result => { 
+          :avs_result => {
             :street_match => parsed[:avspostcoderesponse],
             :postal_match => parsed[:avspostcoderesponse]
           }
-        )
-      end
+        }
 
-     #def commit_3dsecure(request)
-     #  response = ssl_post(URL, request)
-     #  parsed = parse(response)
-     #end
-      
-      def commit_3dsecure(request)
-        response = ssl_post(THREE_D_SECURE_URL, request)
-        parsed = parse(response)
+        if endpoint == :three_d_secure
+          options.merge!({
+            :pa_req => parsed[:pareq],
+            :acs_url => parsed[:url],
+            :three_d_secure => true,
+            :xid => parsed[:xid],
+            :three_d_secure_enrolled => parsed[:enrolled] == "Y" ? true : false
+          })
+        end
 
-        Response.new(parsed[:result] == "00", message_from(parsed), parsed,
-          :test => parsed[:message] =~ /\[ test system \]/,
-          :body => response,
-          :pa_req => parsed[:pareq],
-          :acs_url => parsed[:url],
-          :three_d_secure => true,
-          :xid => parsed[:xid],
-          :three_d_secure_enrolled => parsed[:enrolled] == "Y" ? true : false
-        )
+        Response.new(parsed[:result] == "00", message_from(parsed), parsed, options)
       end
 
       def parse(xml)
@@ -366,12 +347,6 @@ module ActiveMerchant
         xml.target!
       end
 
-      # <mpi>
-      #   <cavv>AAACAWQWaRKIFwQlVBZpAAAAAAA=</cavv>
-      #   <xid>l2ncCuvKNtCtRY3OoC/ztHS8ZvI=</xid>
-      #   <eci>5</eci>
-      # </mpi>
-      
       def add_three_d_secure(xml, options)
         if options[:three_d_secure_sig]
           xml.tag! 'mpi' do

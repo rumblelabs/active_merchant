@@ -141,7 +141,7 @@ class RemoteRealexTest < Test::Unit::TestCase
       assert_not_nil response
       assert_failure response
       
-      assert_equal '205', response.params['result']
+      assert_equal '200', response.params['result']
       assert_equal RealexGateway::BANK_ERROR, response.message
     end      
   

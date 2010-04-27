@@ -5,7 +5,7 @@ module ActiveMerchant #:nodoc:
     end
   
     class Response
-      attr_reader :params, :message, :test, :authorization, :avs_result, :cvv_result, :body
+      attr_reader :params, :message, :test, :authorization, :avs_result, :cvv_result, :body, :pa_req, :md, :acs_url
       
       def success?
         @success
@@ -19,6 +19,14 @@ module ActiveMerchant #:nodoc:
         @fraud_review
       end
       
+      def three_d_secure?
+        @three_d_secure
+      end
+      
+      def enrolled?
+        @three_d_secure_enrolled
+      end
+
       def initialize(success, message, params = {}, options = {})
         @success, @message, @params = success, message, params.stringify_keys
         @test = options[:test] || false        
@@ -27,6 +35,13 @@ module ActiveMerchant #:nodoc:
         @avs_result = AVSResult.new(options[:avs_result]).to_hash
         @cvv_result = CVVResult.new(options[:cvv_result]).to_hash
         @body = options[:body]
+
+        # 3D 'Three D' Secure
+        @three_d_secure = options[:three_d_secure]
+        @three_d_secure_enrolled = options[:three_d_secure_enrolled]
+        @pa_req = options[:pa_req]
+        @xid = options[:xid]
+        @acs_url = options[:acs_url]        
       end
     end
   end

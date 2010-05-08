@@ -235,7 +235,7 @@ module ActiveMerchant
           :cvv_result => parsed[:cvnresult],
           :body => response,
           :avs_result => {
-            :street_match => parsed[:avspostcoderesponse],
+            :street_match => parsed[:avsaddressresponse],
             :postal_match => parsed[:avspostcoderesponse]
           }
         }

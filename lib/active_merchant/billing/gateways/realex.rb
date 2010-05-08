@@ -115,7 +115,7 @@ module ActiveMerchant
 
         if options[:three_d_secure_auth]
           three_d_secure_request = build_3d_secure_verify_signature_or_enrolled_request("3ds-verifysig", money, creditcard, options)
-          three_d_secure_response = commit_3dsecure(three_d_secure_request)
+          three_d_secure_response = commit(three_d_secure_request, :three_d_secure)
           result = three_d_secure_response.params['result']
           if result  == '00'
             status = three_d_secure_response.params['threedsecure_status'] 

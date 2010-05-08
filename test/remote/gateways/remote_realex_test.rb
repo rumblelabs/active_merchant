@@ -327,5 +327,60 @@ class RemoteRealexTest < Test::Unit::TestCase
     response = @gateway.authorize(@amount, @visa, :order_id => generate_unique_id)
     assert_not_nil response.body
   end
+ 
+  def test_realex_authorize_with_3dsecure
+    response = @gateway.authorize(@amount, @visa, 
+      :order_id => generate_unique_id,
+      :description => 'Test Realex Purchase',
+      :billing_address => {
+        :zip => '90210',
+        :country => 'US'
+      },
+      :three_d_secure => true
+    )
+
+    assert_not_nil response
+    assert_success response
+    assert response.params['pareq'].length > 0
+    assert response.params['enrolled'].length > 0
+
+    assert_equal 'Successful', response.message
+  end
   
+#  def test_realex_purchase_with_3dsecure
+#    order_id = generate_unique_id
+#    response = @gateway.authorize(@amount, @visa, 
+#      :order_id => order_id,
+#      :description => 'Test Realex Purchase',
+#      :billing_address => {
+#        :zip => '90210',
+#        :country => 'US'
+#      },
+#      :three_d_secure => true
+#    )
+#
+#    pareq = response.params['pareq']
+#
+#    response = @gateway.purchase(@amount, @visa, 
+#      :order_id => order_id,
+#      :description => 'Test Realex Purchase',
+#      :billing_address => {
+#        :zip => '90210',
+#        :country => 'US'
+#      },
+#      :three_d_secure_auth => {
+#        :pa_res => pareq
+#      }
+#    )
+#
+#    
+#    assert_not_nil response
+#    assert_success response
+#    assert response.params['pareq'].length > 0
+#    assert response.params['enrolled'].length > 0
+#
+#    assert_equal 'Successful', response.message
+#  end
+
+
 end

@@ -343,7 +343,10 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert_success response
     assert response.params['pareq'].length > 0
     assert response.params['enrolled'].length > 0
-
+    assert response.params['enrolled'] == "Y"
+  
+    assert_equal response.params['url'], 'https://dropit.3dsecure.net:9443/PIT/ACS'
+    
     assert_equal 'Successful', response.message
   end
   

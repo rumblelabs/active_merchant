@@ -340,7 +340,7 @@ module ActiveMerchant
           xml.tag! 'orderid', sanitize_order_id(options[:order_id])
           add_ammount(xml, money, options)
           add_card(xml, credit_card)
-          xml.tag!('pares', options[:three_d_secure_auth][:pa_res]) if(action == '3ds-verifysig')
+          xml.tag!('pares', options[:three_d_secure_auth][:pa_res]) if(action == '3ds-verifysig' && options[:three_d_secure_auth] )
           add_signed_digest(xml, timestamp, @options[:login], options[:order_id], amount(money), (options[:currency] || currency(money)), credit_card.number)
           add_comments(xml, options)
         end

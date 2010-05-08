@@ -5,7 +5,8 @@ class RealexTest < Test::Unit::TestCase
   
   class ActiveMerchant::Billing::RealexGateway
     # For the purposes of testing, lets redefine some protected methods as public.
-    public :build_purchase_or_authorization_request, :build_credit_request, :build_void_request, :build_capture_request, :stringify_values, :avs_input_code
+    public :build_purchase_or_authorization_request, :build_credit_request, :build_void_request, 
+      :build_capture_request, :stringify_values, :avs_input_code, :build_3d_secure_verify_signature_or_enrolled_request
   end
   
   def setup
@@ -312,6 +313,45 @@ SRC
     assert_success response
     assert response.test?
     
+  end
+
+  def test_verify_signature_xml
+    gateway = RealexGateway.new(:login => @login, :password => @password, :account => @account)
+    
+    
+    options = {
+      :order_id => '1',
+      :three_d_secure_auth => {
+        :pa_res => 'xxxx'
+      }
+    }
+
+    ActiveMerchant::Billing::RealexGateway.expects(:timestamp).returns('20090824160201')
+
+    valid_verify_signature_request_xml = <<-SRC
+<request timestamp="20090824160201" type="3ds-verifysig">
+  <merchantid>your_merchant_id</merchantid>
+  <account>your_account</account>
+  <orderid>1</orderid>
+  <amount currency="EUR">100</amount>
+  <card>
+    <number>4263971921001307</number>
+    <expdate>0808</expdate>
+    <chname>Longbob Longsen</chname>
+    <type>VISA</type>
+    <issueno></issueno>
+    <cvn>
+      <number></number>
+      <presind></presind>
+    </cvn>
+  </card>
+  <pares>xxxx</pares>
+  <sha1hash>3499d7bc8dbacdcfba2286bd74916d026bae630f</sha1hash>
+</request>
+SRC
+
+    assert_equal valid_verify_signature_request_xml, @gateway.build_3d_secure_verify_signature_or_enrolled_request('3ds-verifysig', @amount, @credit_card, options)
+
   end
 
   private

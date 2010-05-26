@@ -137,14 +137,17 @@ class RemoteRealexTest < Test::Unit::TestCase
         :order_id => generate_unique_id,
         :description => 'Test Realex coms error'
       )
-      
+
       assert_not_nil response
       assert_failure response
       
       assert_equal '200', response.params['result']
+      # assert_equal '205', response.params['result']
+      # will be a 205 in production
+      # will be a 200 error in test arg.
       assert_equal RealexGateway::BANK_ERROR, response.message
-    end      
-  
+    end
+
   end
   
   def test_realex_ccn_error
@@ -385,5 +388,87 @@ class RemoteRealexTest < Test::Unit::TestCase
 #    assert_equal 'Successful', response.message
 #  end
 
+  # response timestamp=\"20100303191232\">\r\n<merchantid>exoftwaretest</merchantid>\r\n<account>internet</account>\r\n<orderid>edeac18e066b7208bbdec24c105c17e1</orderid>\r\n<result>00</result>\r\n<message>Successful</message>\r\n<pasref>69deeba5cc294cbba3e3becc016fd3ed</pasref>\r\n<authcode></authcode>\r\n<batchid></batchid>\r\n<timetaken>0</timetaken>\r\n<processingtimetaken></processingtimetaken>\r\n<md5hash>37f71f37cb3a7eb2e138f46d6fe9cbcb</md5hash>\r\n<sha1hash>1aa79d2d8621c8d2e4c80a752c19c75f717ff8b7</sha1hash>\r\n</response>\r\n", @authorization=nil, @success=true>
+
+  def test_realex_store_user
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    assert_not_nil response
+    assert_success response
+    assert_equal 'Successful', response.message   
+  end
+  
+  def test_realex_store_card
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id)
+    store_card_response = @gateway.store(@visa, options)
+
+    assert_not_nil store_card_response
+    assert_success store_card_response
+    assert_equal 'Successful', store_card_response.message
+  end
+  
+  def test_realex_receipt_in
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id, :payment_method => 'visa01')
+    store_card_response = @gateway.store(@visa, options)
+
+    options.merge!({
+      :order_id => generate_unique_id,
+      :payment_method => 'visa01'
+    })
+    receipt_in_response = @gateway.recurring(@amount, @visa, options)
+
+    assert_not_nil receipt_in_response
+    assert_success receipt_in_response
+    assert_equal 'Successful', receipt_in_response.message
+  end
+
+  def test_realex_unstore_card
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id, :payment_method => generate_unique_id)
+    store_card_response = @gateway.store(@visa, options)
+    
+    unstore_card_response = @gateway.unstore(@visa, options)
+
+    assert_not_nil unstore_card_response
+    assert_success unstore_card_response
+    assert_equal 'Successful', unstore_card_response.message
+  end
 
 end

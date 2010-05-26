@@ -366,6 +366,8 @@ SRC
       }
     }
 
+    ActiveMerchant::Billing::RealexGateway.expects(:timestamp).returns('20090824160201')
+
     valid_verify_signature_request_xml = <<-SRC
 <request timestamp="20090824160201" type="3ds-verifyenrolled">
   <merchantid>your_merchant_id</merchantid>

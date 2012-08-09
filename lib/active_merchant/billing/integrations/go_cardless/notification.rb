@@ -10,6 +10,7 @@ module ActiveMerchant #:nodoc:
           # Parse  a notification from the webhook JSON body
           def initialize(body)
             @payload = ActiveSupport::JSON.decode(body)['payload']
+            @payload = HashWithIndifferentAccess.new(@payload)
           rescue
             raise ArgumentError, "Invalid webhook payload"
           end

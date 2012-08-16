@@ -62,7 +62,7 @@ class RemoteRealexTest < Test::Unit::TestCase
   end
 
   def test_realex_purchase_with_invalid_account
-    response = RealexGateway.new(fixtures(:realex_with_account)).purchase(@amount, @visa,
+    response = RealexGateway.new(fixtures(:realex_with_invalid_account)).purchase(@amount, @visa,
       :order_id => generate_unique_id,
       :description => 'Test Realex purchase with invalid acocunt'
     )
@@ -132,7 +132,7 @@ class RemoteRealexTest < Test::Unit::TestCase
 
       assert_not_nil response
       assert_failure response
-
+      
       assert_equal '200', response.params['result']
       assert_equal RealexGateway::BANK_ERROR, response.message
     end
@@ -283,7 +283,7 @@ class RemoteRealexTest < Test::Unit::TestCase
   def test_realex_purchase_then_refund
     order_id = generate_unique_id
 
-    gateway_with_refund_password = RealexGateway.new(fixtures(:realex).merge(:rebate_secret => 'refund'))
+    gateway_with_refund_password = RealexGateway.new(fixtures(:realex_with_rebate_secret))
 
     purchase_response = gateway_with_refund_password.purchase(@amount, @visa,
       :order_id => order_id,
@@ -301,6 +301,95 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert rebate_response.test?
     assert rebate_response.authorization.length > 0
     assert_equal 'Successful', rebate_response.message
+  end
+
+  def test_realex_response_body
+    response = @gateway.authorize(@amount, @visa, :order_id => generate_unique_id)
+    assert_not_nil response.body
+  end
+
+
+  # response timestamp=\"20100303191232\">\r\n<merchantid>exoftwaretest</merchantid>\r\n<account>internet</account>\r\n<orderid>edeac18e066b7208bbdec24c105c17e1</orderid>\r\n<result>00</result>\r\n<message>Successful</message>\r\n<pasref>69deeba5cc294cbba3e3becc016fd3ed</pasref>\r\n<authcode></authcode>\r\n<batchid></batchid>\r\n<timetaken>0</timetaken>\r\n<processingtimetaken></processingtimetaken>\r\n<md5hash>37f71f37cb3a7eb2e138f46d6fe9cbcb</md5hash>\r\n<sha1hash>1aa79d2d8621c8d2e4c80a752c19c75f717ff8b7</sha1hash>\r\n</response>\r\n", @authorization=nil, @success=true>
+
+  def test_realex_store_user
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    assert_not_nil response
+    assert_success response
+    assert_equal 'Successful', response.message   
+  end
+
+  def test_realex_store_card
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id)
+    store_card_response = @gateway.store(@visa, options)
+
+    assert_not_nil store_card_response
+    assert_success store_card_response
+    assert_equal 'Successful', store_card_response.message
+  end
+
+  def test_realex_receipt_in
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id, :payment_method => 'visa01')
+    store_card_response = @gateway.store(@visa, options)
+
+    options.merge!({
+      :order_id => generate_unique_id,
+      :payment_method => 'visa01'
+    })
+    receipt_in_response = @gateway.recurring(@amount, @visa, options)
+
+    assert_not_nil receipt_in_response
+    assert_success receipt_in_response
+    assert_equal 'Successful', receipt_in_response.message
+  end
+
+  def test_realex_unstore_card
+    options = {
+      :order_id => generate_unique_id,
+      :user => {
+        :id => generate_unique_id,
+        :first_name => 'John',
+        :last_name => 'Smith'
+      }
+    }
+    response = @gateway.store_user(options)
+    
+    options.merge!(:order_id => generate_unique_id, :payment_method => generate_unique_id)
+    store_card_response = @gateway.store(@visa, options)
+    
+    unstore_card_response = @gateway.unstore(@visa, options)
+
+    assert_not_nil unstore_card_response
+    assert_success unstore_card_response
+    assert_equal 'Successful', unstore_card_response.message
   end
 
 end

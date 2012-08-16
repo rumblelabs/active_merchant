@@ -398,76 +398,93 @@ quantum:
   password: Y
 
 realex:
-  login: X
-  password: Y
+  login: login
+  password: password
+  account: test
 
-realex_with_account:
-  login: X
-  password: Y
-  account: testaccount
+realex_with_invalid_account:
+  login: login
+  password: password
+  account: invalid
+
+realex_with_rebate_secret:
+  login: login
+  password: password
+  account: test
+  rebate_secret: secret
 
 # Realex doesn't provide public testing data
 # Fill in the card numbers with the Realex test
 # data.
 realex_visa:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'visa'
 
 realex_visa_declined:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'visa'
 
 realex_visa_referral_a:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'visa'
 
 realex_visa_referral_b:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'visa'
 
 realex_visa_coms_error:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'visa'
 
 realex_mastercard:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'master'
 
 realex_mastercard_declined:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'master'
 
 realex_mastercard_referral_a:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'master'
 
 realex_mastercard_referral_b:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'master'
 
 realex_mastercard_coms_error:
-  number:
+  number: 
   month: '6'
   year: '2020'
   verification_value: '123'
+  brand: 'master'
 
 samurai:
   login: 'a1ebafb6da5238fb8a3ac9f6'

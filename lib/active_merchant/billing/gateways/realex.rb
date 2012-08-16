@@ -20,6 +20,8 @@ module ActiveMerchant
     # same order id
     class RealexGateway < Gateway
       self.live_url = self.test_url = 'https://epage.payandshop.com/epage-remote.cgi'
+      RECURRING_PAYMENTS_URL = "https://epage.payandshop.com/epage-remote-plugins.cgi"
+
                   
       CARD_MAPPING = {
         'master'            => 'MC',
@@ -68,9 +70,30 @@ module ActiveMerchant
         commit(request)
       end
 
-      def refund(money, authorization, options = {})
-        request = build_refund_request(money, authorization, options)
-        commit(request)
+      def refund(money, authorization, options = {})        
+        request = build_refund_request(money, authorization, options) 
+        commit(request, :default, options)
+      end
+      
+      # Credit an account.
+      #
+      # This transaction is also referred to as a Refund (or Rebate) and indicates to the gateway that
+      # money should flow from the merchant to the customer.
+      #
+      # ==== Parameters
+      #
+      # * <tt>money</tt> -- The amount to be credited to the customer. Either an Integer value in cents or a Money object.
+      # * <tt>authorization</tt> - The authorization returned from the previous authorize request.
+      # * <tt>options</tt> -- A hash of parameters.
+      #
+      # ==== Options
+      #
+      # * <tt>:order_id</tt> -- The application generated order identifier. (REQUIRED)
+      # * <tt>:pasref</tt> -- The realex payments reference of the original transaction. (REQUIRED)
+      #
+      def credit(money, authorization, options = {})
+        request = build_credit_request(money, authorization, options)
+        commit(request, :default, options)
       end
 
       def credit(money, authorization, options = {})
@@ -81,23 +104,60 @@ module ActiveMerchant
       def void(authorization, options = {})
         request = build_void_request(authorization, options)
         commit(request)
-      end     
-      
-      private           
-      def commit(request)        
-        response = parse(ssl_post(self.live_url, request))
+      end
 
-        Response.new(response[:result] == "00", message_from(response), response,
-          :test => response[:message] =~ /\[ test system \]/,
-          :authorization => authorization_from(response),
-          :cvv_result => response[:cvnresult],
-          :avs_result => {
-            :street_match => response[:avspostcoderesponse],
-            :postal_match => response[:avspostcoderesponse]
+      # Recurring Payments
+      
+      def recurring(money, credit_card, options = {})
+        requires!(options, :order_id)
+
+        request = build_receipt_in_request(money, credit_card, options) 
+        commit(request, :recurring)
+      end
+
+      def store(credit_card, options = {})
+        requires!(options, :order_id)
+        request = build_new_card_request(credit_card, options)
+        commit(request, :recurring)
+      end
+
+      def unstore(creditcard, options = {})     
+        request = build_cancel_card_request(creditcard, options)
+        commit(request, :recurring)
+      end
+
+      def store_user(options = {})
+        requires!(options, :order_id)
+        request = build_new_payee_request(options)
+        commit(request, :recurring)
+      end
+ 
+      private
+      
+      def current_endpoint(endpoint=:default, options={})
+        return options[:endpoint] if options[:endpoint]
+        return RECURRING_PAYMENTS_URL if endpoint == :recurring
+        return self.live_url
+      end
+      
+      def commit(request, endpoint=:default, options={})
+        url = current_endpoint(endpoint, options)
+        response = ssl_post(url, request)
+        parsed = parse(response)
+
+        Response.new(parsed[:result] == "00", message_from(parsed), parsed,
+          :test => parsed[:message] =~ /\[ test system \]/,
+          :authorization => authorization_from(parsed),
+          :cvv_result => parsed[:cvnresult],
+          :body => response,
+          :request => request,
+          :avs_result => { 
+            :street_match => parsed[:avsaddressresponse],
+            :postal_match => parsed[:avspostcoderesponse]
           }
         )
       end
-
+      
       def parse(xml)
         response = {}
 
@@ -120,6 +180,12 @@ module ActiveMerchant
         [parsed[:orderid], parsed[:pasref], parsed[:authcode]].join(';')
       end
 
+      def authorization_split(authorization)
+        auth = {}
+        auth[:order_id], auth[:pasref], auth[:authcode] = authorization.split(';')
+        auth
+      end
+
       def build_purchase_or_authorization_request(action, money, credit_card, options)
         timestamp = new_timestamp
         xml = Builder::XmlMarkup.new :indent => 2
@@ -138,18 +204,22 @@ module ActiveMerchant
 
       def build_capture_request(authorization, options)
         timestamp = new_timestamp
+        order_id  = authorization_split(authorization)[:order_id] || options[:order_id]
+
         xml = Builder::XmlMarkup.new :indent => 2
         xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'settle' do
           add_merchant_details(xml, options)
           add_transaction_identifiers(xml, authorization, options)
           add_comments(xml, options)
-          add_signed_digest(xml, timestamp, @options[:login], sanitize_order_id(options[:order_id]), nil, nil, nil)
+          add_signed_digest(xml, timestamp, @options[:login], order_id, nil, nil, nil)
         end
         xml.target!
       end
 
       def build_refund_request(money, authorization, options)
         timestamp = new_timestamp
+        order_id = options[:order_id] || authorization_split(authorization)[:order_id]
+
         xml = Builder::XmlMarkup.new :indent => 2
         xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'rebate' do
           add_merchant_details(xml, options)
@@ -158,23 +228,114 @@ module ActiveMerchant
           xml.tag! 'refundhash', @options[:refund_hash] if @options[:refund_hash]
           xml.tag! 'autosettle', 'flag' => 1
           add_comments(xml, options)
-          add_signed_digest(xml, timestamp, @options[:login], sanitize_order_id(options[:order_id]), amount(money), (options[:currency] || currency(money)), nil)
+          add_signed_digest(xml, timestamp, @options[:login], order_id, amount(money), (options[:currency] || currency(money)), nil)
+        end
+        xml.target!
+      end
+
+      def build_credit_request(money, authorization, options)
+        timestamp = new_timestamp
+        order_id = options[:order_id] || authorization_split(authorization)[:order_id]
+
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'rebate' do
+          add_merchant_details(xml, options)
+          add_transaction_identifiers(xml, authorization, options)
+          xml.tag! 'amount', amount(money), 'currency' => options[:currency] || currency(money)
+          xml.tag! 'refundhash', @options[:refund_hash] if @options[:refund_hash]
+          xml.tag! 'autosettle', 'flag' => 1          
+          add_comments(xml, options)
+          add_signed_digest(xml, timestamp, @options[:login], order_id, amount(money), (options[:currency] || currency(money)), '')
         end
         xml.target!
       end
 
       def build_void_request(authorization, options)
         timestamp = new_timestamp
+        order_id = options[:order_id] || authorization_split(authorization)[:order_id]
+
         xml = Builder::XmlMarkup.new :indent => 2
         xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'void' do
           add_merchant_details(xml, options)
           add_transaction_identifiers(xml, authorization, options)
           add_comments(xml, options)
-          add_signed_digest(xml, timestamp, @options[:login], sanitize_order_id(options[:order_id]), nil, nil, nil)
+          add_signed_digest(xml, timestamp, @options[:login], order_id, nil, nil, nil)
         end
         xml.target!
       end
 
+      def build_cancel_card_request(creditcard, options = {})
+        timestamp = new_timestamp
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'card-cancel-card' do
+          add_merchant_details(xml, options)
+          xml.tag! 'card' do          
+            xml.tag! 'ref', options[:payment_method]
+            xml.tag! 'payerref', options[:user][:id]
+            xml.tag! 'expdate', expiry_date(creditcard)
+          end
+          # TODO userid . card ref . expiry date
+          add_signed_digest(xml, timestamp, @options[:login], options[:user][:id], options[:payment_method])
+        end
+      end
+      
+      def build_new_card_request(credit_card, options = {})
+        timestamp = new_timestamp
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'card-new' do
+          add_merchant_details(xml, options)
+          xml.tag! 'orderid', sanitize_order_id(options[:order_id])
+          xml.tag! 'card' do
+            xml.tag! 'ref', options[:payment_method]
+            xml.tag! 'payerref', options[:user][:id]
+            xml.tag! 'number', credit_card.number
+            xml.tag! 'expdate', expiry_date(credit_card)
+            xml.tag! 'chname', credit_card.name
+            xml.tag! 'type', CARD_MAPPING[card_brand(credit_card).to_s]
+            xml.tag! 'issueno', credit_card.issue_number
+            xml.tag! 'cvn' do
+              xml.tag! 'number', credit_card.verification_value
+              xml.tag! 'presind', (options['presind'] || (credit_card.verification_value? ? 1 : nil))
+            end
+          end
+          # timestamp.merchantid.orderid.amount.currency.payerref.chname.(card)number
+          add_signed_digest(xml, timestamp, @options[:login], options[:order_id], '', '', options[:user][:id], credit_card.name, credit_card.number)
+        end
+        xml.target!
+      end
+
+      def build_new_payee_request(options)
+        timestamp = new_timestamp
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'payer-new' do
+          add_merchant_details(xml, options)
+          xml.tag! 'orderid', sanitize_order_id(options[:order_id])
+          xml.tag! 'payer', 'type' => 'Business', 'ref' => options[:user][:id] do
+            xml.tag! 'firstname', options[:user][:first_name]
+            xml.tag! 'surname', options[:user][:last_name]
+          end
+          add_signed_digest(xml, timestamp, @options[:login], options[:order_id], '', '', options[:user][:id])
+        end
+        xml.target!
+      end
+
+      def build_receipt_in_request(money, credit_card, options)
+        timestamp = new_timestamp
+        xml = Builder::XmlMarkup.new :indent => 2
+        xml.tag! 'request', 'timestamp' => timestamp, 'type' => 'receipt-in' do
+          add_merchant_details(xml, options)
+          xml.tag! 'orderid', sanitize_order_id(options[:order_id])
+          add_amount(xml, money, options)
+          xml.tag! 'payerref', options[:user][:id]
+          xml.tag! 'paymentmethod', options[:payment_method]
+          xml.tag! 'autosettle', 'flag' => '1'
+          add_signed_digest(xml, timestamp, @options[:login], options[:order_id], amount(money), (options[:currency] || currency(money)), options[:user][:id])
+          add_comments(xml, options)
+          add_address_and_customer_info(xml, options)
+        end
+        xml.target!
+      end
+      
       def add_address_and_customer_info(xml, options)
         billing_address = options[:billing_address] || options[:address]
         shipping_address = options[:shipping_address]
@@ -188,7 +349,7 @@ module ActiveMerchant
 
           if billing_address
             xml.tag! 'address', 'type' => 'billing' do
-              xml.tag! 'code', avs_input_code( billing_address )
+              xml.tag! 'code', avs_input_code_or_zip( billing_address, options )
               xml.tag! 'country', billing_address[:country]
             end
           end
@@ -202,6 +363,10 @@ module ActiveMerchant
         end
       end
 
+      def avs_input_code_or_zip(address, options)
+        options[ :skip_avs_check ] ? address[ :zip ] : avs_input_code( address )
+      end
+      
       def add_merchant_details(xml, options)
         xml.tag! 'merchantid', @options[:login]
         if options[:account] || @options[:account]
@@ -210,10 +375,13 @@ module ActiveMerchant
       end
 
       def add_transaction_identifiers(xml, authorization, options)
-        options[:order_id], pasref, authcode = authorization.split(';')
-        xml.tag! 'orderid', sanitize_order_id(options[:order_id])
-        xml.tag! 'pasref', pasref
-        xml.tag! 'authcode', authcode
+        auth = authorization_split(authorization)
+
+        raise ArgumentError, "Invalid authorization" unless [:order_id, :pasref, :authcode].all? { |k| auth.key?(k) }
+
+        xml.tag! 'orderid',  auth[:order_id]
+        xml.tag! 'pasref',   auth[:pasref]
+        xml.tag! 'authcode', auth[:authcode]
       end
 
       def add_comments(xml, options)
@@ -256,6 +424,15 @@ module ActiveMerchant
 
       def new_timestamp
         Time.now.strftime('%Y%m%d%H%M%S')
+      end
+
+      def stringify_values(values)
+        string = ""
+        values.each do |val|
+          string << "#{val}"
+          string << "." unless val.equal?(values.last)
+        end
+        string
       end
 
       def add_signed_digest(xml, *values)

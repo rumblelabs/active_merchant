@@ -19,9 +19,8 @@ module ActiveMerchant
     # so if validation fails you can not correct and resend using the
     # same order id
     class RealexGateway < Gateway
-      self.live_url = self.test_url = 'https://epage.payandshop.com/epage-remote.cgi'
-      RECURRING_PAYMENTS_URL = "https://epage.payandshop.com/epage-remote-plugins.cgi"
-
+      self.live_url = self.test_url = 'https://epage.payandshop.com/epage-remote-gw.cgi'
+      self.recurring_url = 'https://epage.payandshop.com/epage-remote-plugins.cgi'
                   
       CARD_MAPPING = {
         'master'            => 'MC',
@@ -136,7 +135,7 @@ module ActiveMerchant
       
       def current_endpoint(endpoint=:default, options={})
         return options[:endpoint] if options[:endpoint]
-        return RECURRING_PAYMENTS_URL if endpoint == :recurring
+        return self.recurring_url if endpoint == :recurring
         return self.live_url
       end
       

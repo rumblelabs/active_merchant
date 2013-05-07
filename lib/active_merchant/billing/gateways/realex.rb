@@ -20,7 +20,7 @@ module ActiveMerchant
     # same order id
     class RealexGateway < Gateway
       self.live_url = self.test_url = 'https://epage.payandshop.com/epage-remote-gw.cgi'
-      RECURRING_PAYMENTS_URL = "https://epage.payandshop.com/epage-remote-plugins.cgi"
+      RECURRING_PAYMENTS_URL = "https://epage.payandshop.com/epage-remote-plugins-gw.cgi"
 
                   
       CARD_MAPPING = {
